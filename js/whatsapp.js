@@ -2,6 +2,7 @@
 const Whats = (function () {
    "use strict";
 
+
    function abrir(telefone, texto) {
       const numero = String(telefone || "").replace(/\D/g, "");
       const base = numero ? "https://wa.me/" + numero : "https://wa.me/";
@@ -19,50 +20,61 @@ const Whats = (function () {
       return p ? p.nome : "—";
    }
 
-   function mensagemEntrega(e, operador) {
-      const linhas = [
-         "*" + DADOS.condominio + " – Aviso de entrega*",
-         "",
-         "Olá, " + e.nome + "! Chegou uma entrega para você.",
-         "Bloco " + e.bloco + " · Apto " + e.apto,
-         "Tipo: " + e.tipo
-      ];
-      if (e.descricao) linhas.push("Detalhes: " + e.descricao);
-      linhas.push("Recebido às " + e.hora + ".", "Portaria – " + operador.nome);
-      return linhas.join("\n");
+   /* ---------- Aviso de entrega (para o morador) ---------- */
+   function mensagemEntrega(item, operador) {
+      const qtd = item.qtd || 1;
+      const quando = item.data ? formatarData(item.data) + " às " + item.hora : item.hora;
+
+      let msg = `*AVISO DE ENTREGA*\n`;
+      msg += `*${DADOS.condominio}*\n\n`;
+      msg += `Olá, *${item.nome}* (Bloco ${item.bloco} · Apto ${item.apto})!\n`;
+      msg += `Informamos que chegou uma entrega para você na portaria:\n\n`;
+      msg += `*Tipo:* ${item.tipo}\n`;
+      msg += `*Quantidade:* ${qtd} unidade(s)\n`;
+      if (item.descricao) msg += `*Detalhes:* ${item.descricao}\n`;
+      msg += `*Registrado por:* ${item.porteiro || operador.nome}\n`;
+      msg += `*Data/Hora:* ${quando}\n\n`;
+      msg += `Por favor, retire na portaria assim que possível. Tenha um ótimo dia!`;
+      return msg;
    }
 
-   function bloco(titulo, itens, formatar) {
-      const linhas = ["", "*" + titulo + " (" + itens.length + ")*"];
-      if (!itens.length) linhas.push("Nenhum registro.");
-      itens.forEach(function (item, i) { linhas.push((i + 1) + ". " + formatar(item)); });
-      return linhas;
+   /* ---------- Passagem de plantão (relatório completo) ---------- */
+   function secao(titulo, itens, formatar) {
+      let msg = `\n*${titulo} (${itens.length})*\n`;
+      if (!itens.length) return msg + `Nenhum registro.\n`;
+      itens.forEach(function (item, i) {
+         msg += `${i + 1}. ${item.hora} – ${formatar(item)}\n`;
+      });
+      return msg;
    }
 
    function mensagemPlantao(p, operador) {
-      let linhas = [
-         "*PLANTÃO – " + DADOS.condominio + "*",
-         "Data: " + formatarData(p.data),
-         "Operador: " + operador.nome,
-         "Porteiro saindo: " + nomePorteiro(p.saindo),
-         "Porteiro entrando: " + nomePorteiro(p.entrando)
-      ];
-      linhas = linhas.concat(
-         bloco("ENTREGAS", p.entregas, function (e) {
-            return "[" + e.hora + "] " + e.bloco + "/" + e.apto + " – " + e.nome + " – " + e.tipo +
-               (e.descricao ? " (" + e.descricao + ")" : "");
-         }),
-         bloco("OCORRÊNCIAS", p.ocorrencias, function (o) {
-            return "[" + o.hora + "] " + o.tipo + ": " + o.descricao;
-         }),
-         bloco("OBSERVAÇÕES", p.observacoes, function (o) {
-            return "[" + o.hora + "] " + o.titulo + ": " + o.descricao;
-         }),
-         bloco("PRESTADORES DE SERVIÇO", p.prestadores, function (s) {
-            return "[" + s.hora + "] " + s.empresa + " – " + s.nome + " – " + s.servico;
-         })
-      );
-      return linhas.join("\n");
+      let msg = `*PASSAGEM DE PLANTÃO*\n`;
+      msg += `*${DADOS.condominio}*\n\n`;
+      msg += `*Data:* ${formatarData(p.data)}\n`;
+      msg += `*Operador:* ${operador.nome}\n`;
+      msg += `*Porteiro saindo:* ${nomePorteiro(p.saindo)}\n`;
+      msg += `*Porteiro entrando:* ${nomePorteiro(p.entrando)}\n`;
+
+      msg += secao("ENTREGAS", p.entregas, function (e) {
+         return `*${e.bloco} / ${e.apto}* – ${e.nome} – ${e.tipo} (${e.qtd || 1} un.)` +
+            (e.descricao ? ` – ${e.descricao}` : "");
+      });
+      msg += secao("OCORRÊNCIAS", p.ocorrencias, function (o) {
+         return `*${o.tipo}:* ${o.descricao}`;
+      });
+      msg += secao("OBSERVAÇÕES", p.observacoes, function (o) {
+         return `*${o.titulo}:* ${o.descricao}`;
+      });
+      msg += secao("PRESTADORES DE SERVIÇO", p.prestadores, function (s) {
+         return `*${s.empresa}* – ${s.nome} – ${s.servico}`;
+      });
+      msg += secao("AVISOS", p.avisos || [], function (a) {
+         return `*${a.assunto}* (para: ${a.destino}): ${a.descricao}`;
+      });
+
+      msg += `\nBom plantão a todos!`;
+      return msg;
    }
 
    return { abrir, formatarData, nomePorteiro, mensagemEntrega, mensagemPlantao };

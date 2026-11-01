@@ -12,7 +12,7 @@
       entregas: {
          titulo: function (r) { return r.bloco + " · Apto " + r.apto; },
          detalhes: function (r) {
-            const d = ["Morador: " + r.nome, "Tipo: " + r.tipo];
+            const d = ["Morador: " + r.nome + (r.avulso ? " (não cadastrado)" : ""), "Tipo: " + r.tipo + " · Qtd: " + (r.qtd || 1)];
             if (r.descricao) d.push(r.descricao);
             return d;
          }
@@ -28,6 +28,10 @@
       prestadores: {
          titulo: function (r) { return r.empresa; },
          detalhes: function (r) { return ["Prestador: " + r.nome, "Serviço: " + r.servico]; }
+      },
+      avisos: {
+         titulo: function (r) { return r.assunto; },
+         detalhes: function (r) { return ["Para: " + r.destino, r.descricao]; }
       }
    };
 
@@ -42,7 +46,7 @@
    }
    function plantaoVazio() {
       return { data: dataHoje(), saindo: "", entrando: "",
-               entregas: [], ocorrencias: [], observacoes: [], prestadores: [] };
+               entregas: [], ocorrencias: [], observacoes: [], prestadores: [], avisos: [] };
    }
 
    let plantao = Object.assign(plantaoVazio(), Armazenamento.ler("plantao") || {});
@@ -78,6 +82,7 @@
       preencher($("entrega-bloco"), DADOS.blocos, igual, igual);
       preencher($("entrega-apto"), DADOS.apartamentos, igual, igual);
       preencher($("entrega-tipo"), DADOS.tiposEntrega, igual, igual);
+      preencher($("avulso-tipo"), DADOS.tiposEntrega, igual, igual);
    }
 
    function moradoresDaUnidade() {
@@ -169,6 +174,11 @@
    /* ---------- Formulários de registro ---------- */
    let enviarApos = false;
 
+   function normalizarTelefone(valor) {
+      const numeros = String(valor || "").replace(/\D/g, "");
+      return (numeros.length === 10 || numeros.length === 11) ? "55" + numeros : numeros;
+   }
+
    function coletar(secao, form) {
       const dados = Object.fromEntries(new FormData(form));
       Object.keys(dados).forEach(function (k) { dados[k] = String(dados[k]).trim(); });
@@ -177,7 +187,14 @@
             return x.bloco === dados.bloco && x.apto === dados.apto &&
                    x.nome.toLowerCase() === dados.nome.toLowerCase();
          });
-         dados.telefone = m ? m.telefone : "";
+         if (form.id === "form-avulso") {
+            dados.avulso = true;
+            dados.telefone = normalizarTelefone(dados.telefone);
+         } else {
+            dados.telefone = m ? m.telefone : "";
+         }
+         dados.data = dataHoje();
+         dados.porteiro = operador.nome;
       }
       return Object.assign({ id: Date.now() + Math.random(), hora: horaAgora() }, dados);
    }
@@ -192,18 +209,44 @@
          desenhar(secao);
          form.reset();
          if (secao === "entregas") atualizarMoradores();
+         if (form.id === "form-avulso") fecharAvulso();
          avisar("Registro adicionado.");
          if (enviarApos && secao === "entregas") enviarEntrega(registro);
          enviarApos = false;
       });
    });
 
-   $("btn-registrar-enviar").addEventListener("click", function () {
-      enviarApos = true;
-      const form = $("form-entregas");
-      if (form.checkValidity()) { form.requestSubmit(); }
-      else { enviarApos = false; form.reportValidity(); }
+   document.querySelectorAll("[data-enviar]").forEach(function (botaoEnviar) {
+      botaoEnviar.addEventListener("click", function () {
+         const form = botaoEnviar.closest("form");
+         const tel = form.elements.telefone;
+         if (tel && normalizarTelefone(tel.value).length < 12) {
+            avisar("Informe o telefone com DDD para enviar pelo WhatsApp.");
+            tel.focus();
+            return;
+         }
+         enviarApos = true;
+         if (form.checkValidity()) { form.requestSubmit(); }
+         else { enviarApos = false; form.reportValidity(); }
+      });
    });
+
+   /* Morador não cadastrado: formulário só aparece ao clicar no botão */
+   function abrirAvulso() {
+      $("form-avulso").hidden = false;
+      $("btn-avulso").setAttribute("aria-expanded", "true");
+      $("avulso-bloco").focus();
+   }
+   function fecharAvulso() {
+      const f = $("form-avulso");
+      f.reset();
+      f.hidden = true;
+      $("btn-avulso").setAttribute("aria-expanded", "false");
+   }
+   $("btn-avulso").addEventListener("click", function () {
+      if ($("form-avulso").hidden) abrirAvulso(); else fecharAvulso();
+   });
+   $("btn-avulso-cancelar").addEventListener("click", fecharAvulso);
 
    $("entrega-bloco").addEventListener("change", atualizarMoradores);
    $("entrega-apto").addEventListener("change", atualizarMoradores);
@@ -239,6 +282,7 @@
       Armazenamento.remover("plantao");
       document.querySelectorAll("form[data-secao]").forEach(function (f) { f.reset(); });
       atualizarMoradores();
+      fecharAvulso();
       iniciarTroca();
       desenharTudo();
       avisar("Plantão limpo.");
